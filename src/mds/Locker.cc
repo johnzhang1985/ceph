@@ -43,7 +43,6 @@
 
 #include "messages/MLock.h"
 #include "messages/MClientLease.h"
-#include "messages/MDentryUnlink.h"
 
 #include "messages/MClientRequest.h"
 #include "messages/MClientReply.h"
