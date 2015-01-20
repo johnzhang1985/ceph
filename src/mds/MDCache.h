@@ -27,6 +27,7 @@
 #include "include/Context.h"
 #include "events/EMetaBlob.h"
 #include "RecoveryQueue.h"
+#include "PurgeQueue.h"
 #include "MDSContext.h"
 
 #include "messages/MClientRequest.h"
@@ -135,6 +136,17 @@ public:
   void advance_stray() {
     stray_index = (stray_index+1)%NUM_STRAY;
   }
+  void eval_stray(CDentry *dn) {purge_queue.eval_stray(dn);}
+  void maybe_eval_stray(CInode *in, bool delay=false) {
+    if (in->inode.nlink > 0 || in->is_base() || is_readonly())
+      return;
+    CDentry *dn = in->get_projected_parent_dn();
+    if (!dn->state_test(CDentry::STATE_PURGING) &&
+	dn->get_projected_linkage()->is_primary() &&
+	dn->get_dir()->get_inode()->is_stray())
+      purge_queue.eval_stray(dn, delay);
+  }
+
   bool is_readonly() { return readonly; }
   void force_readonly();
 
@@ -142,10 +154,6 @@ public:
 
   int num_inodes_with_caps;
   int num_caps;
-
-  uint64_t num_strays;
-  uint64_t num_strays_purging;
-  uint64_t num_strays_delayed;
 
   unsigned max_dir_commit_size;
 
@@ -893,38 +901,16 @@ public:
 
   // -- stray --
 public:
-  elist<CDentry*> delayed_eval_stray;
-
-  void eval_stray(CDentry *dn, bool delay=false);
   void eval_remote(CDentry *dn);
-
-  void maybe_eval_stray(CInode *in, bool delay=false) {
-    if (in->inode.nlink > 0 || in->is_base() || is_readonly())
-      return;
-    CDentry *dn = in->get_projected_parent_dn();
-    if (!dn->state_test(CDentry::STATE_PURGING) &&
-	dn->get_projected_linkage()->is_primary() &&
-	dn->get_dir()->get_inode()->is_stray())
-      eval_stray(dn, delay);
-  }
   void try_remove_dentries_for_stray(CInode* diri);
 
   void fetch_backtrace(inodeno_t ino, int64_t pool, bufferlist& bl, Context *fin);
 
 protected:
   void scan_stray_dir(dirfrag_t next=dirfrag_t());
-  void purge_stray(CDentry *dn);
-  void _purge_stray_purged(CDentry *dn, int r=0);
-  void _purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls);
-  void _purge_stray_logged_truncate(CDentry *dn, LogSegment *ls);
+  PurgeQueue purge_queue;
   friend struct C_MDC_RetryScanStray;
   friend class C_IO_MDC_FetchedBacktrace;
-  friend class C_MDC_PurgeStrayLogged;
-  friend class C_MDC_PurgeStrayLoggedTruncate;
-  friend class C_IO_MDC_PurgeStrayPurged;
-  void reintegrate_stray(CDentry *dn, CDentry *rlink);
-  void migrate_stray(CDentry *dn, mds_rank_t dest);
-
 
   // == messages ==
  public:

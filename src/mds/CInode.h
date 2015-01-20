@@ -465,6 +465,7 @@ public:
   friend class Locker;
   friend class Migrator;
   friend class MDCache;
+  friend class PurgeQueue;
   friend class CDir;
   friend class CInodeExport;
 
