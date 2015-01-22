@@ -81,6 +81,8 @@ enum {
   l_mdc_num_strays_purging,
   // How many stray dentries are currently delayed for purge due to refs
   l_mdc_num_strays_delayed,
+  // How many purge RADOS ops might currently be in flight?
+  l_mdc_num_purge_ops,
   // How many dentries have ever been added to stray dir
   l_mdc_strays_created,
   // How many dentries have ever finished purging from stray dir

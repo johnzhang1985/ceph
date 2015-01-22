@@ -11357,6 +11357,7 @@ void MDCache::register_perfcounters()
     pcb.add_u64(l_mdc_num_strays, "num_strays");
     pcb.add_u64(l_mdc_num_strays_purging, "num_strays_purging");
     pcb.add_u64(l_mdc_num_strays_delayed, "num_strays_delayed");
+    pcb.add_u64(l_mdc_num_purge_ops, "num_purge_ops");
     pcb.add_u64_counter(l_mdc_strays_created, "strays_created");
     pcb.add_u64_counter(l_mdc_strays_purged, "strays_purged");
 

@@ -279,6 +279,7 @@ void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
     << ops_allowance << " from " << ops_in_flight << " in flight" << dendl;
   assert(ops_in_flight >= ops_allowance);
   ops_in_flight -= ops_allowance;
+  logger->set(l_mdc_num_purge_ops, ops_in_flight);
   files_purging -= 1;
   _advance();
 }
@@ -421,6 +422,7 @@ bool PurgeQueue::_consume(CDentry *dn)
   dout(10) << __func__ << ": allocating allowance "
     << ops_required << " to " << ops_in_flight << " in flight" << dendl;
   ops_in_flight += ops_required;
+  logger->set(l_mdc_num_purge_ops, ops_in_flight);
   purge(dn, ops_required);
   return true;
 }
