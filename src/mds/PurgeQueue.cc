@@ -88,9 +88,6 @@ void PurgeQueue::purge(CDentry *dn, uint32_t op_allowance)
   dn->get(CDentry::PIN_PURGING);
   in->state_set(CInode::STATE_PURGING);
 
-  num_strays_purging++;
-  logger->set(l_mdc_num_strays_purging, num_strays_purging);
-
   if (dn->item_stray.is_on_list()) {
     dn->item_stray.remove_myself();
     num_strays_delayed--;
@@ -240,10 +237,8 @@ void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
 
     mds->mdlog->submit_entry(le, new C_PurgeStrayLogged(this, dn, pdv, mds->mdlog->get_current_segment()));
 
-    num_strays_purging--;
     num_strays--;
     logger->set(l_mdc_num_strays, num_strays);
-    logger->set(l_mdc_num_strays_purging, num_strays_purging);
     logger->inc(l_mdc_strays_purged);
   } else {
 #ifdef HANDLE_ROGUE_REFS
@@ -274,13 +269,16 @@ void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
 #endif
   }
 
+  dout(10) << __func__ << ": decrementing allowances: ops "
+    << ops_allowance << "/" << ops_in_flight
+    << " files 1/" << files_purging << dendl;
+
   // Release resources
-  dout(10) << __func__ << ": decrementing allowance "
-    << ops_allowance << " from " << ops_in_flight << " in flight" << dendl;
   assert(ops_in_flight >= ops_allowance);
   ops_in_flight -= ops_allowance;
   logger->set(l_mdc_num_purge_ops, ops_in_flight);
   files_purging -= 1;
+  logger->set(l_mdc_num_strays_purging, files_purging);
   _advance();
 }
 
@@ -417,10 +415,13 @@ bool PurgeQueue::_consume(CDentry *dn)
     return false;
   }
 
+  dout(10) << __func__ << ": allocating allowances: ops "
+    << ops_required << "/" << ops_in_flight
+    << " files 1/" << files_purging << dendl;
+
   // Resources are available, acquire them and execute the purge
   files_purging += 1;
-  dout(10) << __func__ << ": allocating allowance "
-    << ops_required << " to " << ops_in_flight << " in flight" << dendl;
+  logger->set(l_mdc_num_strays_purging, files_purging);
   ops_in_flight += ops_required;
   logger->set(l_mdc_num_purge_ops, ops_in_flight);
   purge(dn, ops_required);
@@ -642,7 +643,7 @@ void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
   : delayed_eval_stray(member_offset(CDentry, item_stray)),
     mds(mds), mdcache(mdc), logger(NULL),
     ops_in_flight(0), files_purging(0),
-    num_strays(0), num_strays_purging(0), num_strays_delayed(0)
+    num_strays(0), num_strays_delayed(0)
 {
   assert(mds != NULL);
 

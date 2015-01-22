@@ -52,7 +52,6 @@ class PurgeQueue
 
   // Statistics
   uint64_t num_strays;
-  uint64_t num_strays_purging;
   uint64_t num_strays_delayed;
 
   void purge(CDentry *dn, uint32_t op_allowance);
