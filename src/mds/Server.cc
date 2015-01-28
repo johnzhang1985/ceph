@@ -1085,6 +1085,20 @@ void Server::reply_client_request(MDRequestRef& mdr, MClientReply *reply)
   // clean up request
   mdcache->request_finish(mdr);
 
+  dout(10) << __func__ << ": finished request, examining tracei" << dendl;
+  if (tracei) {
+    dout(10) << "  tracei: " << *tracei << dendl;
+    if (tracei->get_parent_dn()) {
+      dout(10) << "  tracei parent dn: " << *(tracei->get_parent_dn()) << dendl;
+      dout(10) << "  tracei is remote: " << tracei->get_parent_dn()->get_projected_linkage()->is_remote() << dendl;
+
+    } else {
+      dout(10) << "  tracei no parent dn" << dendl;
+    }
+  } else {
+    dout(10) << "  tracei not set" << dendl;
+  }
+
   // take a closer look at tracei, if it happens to be a remote link
   if (tracei && 
       tracei->get_parent_dn() &&
@@ -5279,9 +5293,12 @@ void Server::_unlink_local_finish(MDRequestRef& mdr,
 
   // clean up?
   if (straydn) {
-    if (strayin->is_dir())
+    if (strayin->is_dir()) {
       mdcache->try_remove_dentries_for_stray(strayin);
-    mdcache->eval_stray(straydn);
+    }
+    // Tip off the MDCache that this dentry is a stray that
+    // might be elegible for purge.
+    mdcache->notify_stray(straydn);
   }
 }
 
@@ -6113,8 +6130,9 @@ void Server::_rename_finish(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, 
     mds->locker->eval(in, CEPH_CAP_LOCKS, true);
 
   // clean up?
-  if (straydn) 
-    mdcache->eval_stray(straydn);
+  if (straydn) {
+    mdcache->notify_stray(straydn);
+  }
 }
 
 

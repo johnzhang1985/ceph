@@ -671,8 +671,13 @@ void CDir::remove_null_dentries() {
   assert(get_num_any() == items.size());
 }
 
-// remove dirty null dentries for deleted directory. the dirfrag will be
-// deleted soon, so it's safe to not commit dirty dentries.
+/** remove dirty null dentries for deleted directory. the dirfrag will be
+ *  deleted soon, so it's safe to not commit dirty dentries.
+ *
+ *  This is called when a directory is being deleted, a prerequisite
+ *  of which is that its children have been unlinked: we expect to only see
+ *  null, unprojected dentries here.
+ */
 void CDir::try_remove_dentries_for_stray()
 {
   dout(10) << __func__ << dendl;
@@ -682,8 +687,10 @@ void CDir::try_remove_dentries_for_stray()
   while (p != items.end()) {
     CDentry *dn = p->second;
     ++p;
-    if (!dn->get_linkage()->is_null() || dn->is_projected())
-      continue; // shouldn't happen
+
+    assert(!dn->is_projected());
+    assert(dn->get_linkage()->is_null());
+
     if (dn->is_dirty())
       dn->mark_clean();
     // It's OK to remove lease prematurely because we will never link

@@ -6271,6 +6271,11 @@ void MDCache::trim_dirfrag(CDir *dir, CDir *con, map<mds_rank_t, MCacheExpire*>&
   in->close_dirfrag(dir->dirfrag().frag);
 }
 
+/**
+ * Try trimming an inode from the cache
+ *
+ * @return true if the inode is still in cache, else false if it was trimmed
+ */
 bool MDCache::trim_inode(CDentry *dn, CInode *in, CDir *con, map<mds_rank_t, MCacheExpire*>& expiremap)
 {
   dout(15) << "trim_inode " << *in << dendl;
@@ -6300,10 +6305,13 @@ bool MDCache::trim_inode(CDentry *dn, CInode *in, CDir *con, map<mds_rank_t, MCa
   // INODE
   if (in->is_auth()) {
     // eval stray after closing dirfrags
-    if (dn && !mds->is_standby_replay()) {
+    if (dn) {
       maybe_eval_stray(in);
-      if (dn->get_num_ref() > 0)
+      if (dn->get_num_ref() > 0) {
+        // Independent of whether we passed this on to the purge queue,
+        // if it still has refs then don't count it as trimmed
 	return true;
+      }
     }
   } else {
     mds_authority_t auth = in->authority();
@@ -8881,8 +8889,9 @@ void MDCache::scan_stray_dir(dirfrag_t next)
       CDentry *dn = q->second;
       CDentry::linkage_t *dnl = dn->get_projected_linkage();
       purge_queue.notify_stray_created();
-      if (dnl->is_primary())
+      if (dnl->is_primary()) {
 	maybe_eval_stray(dnl->get_inode());
+      }
     }
   }
 }
@@ -8898,6 +8907,12 @@ void MDCache::try_remove_dentries_for_stray(CInode* diri) {
   }
 }
 
+/**
+ * If a remote dentry refers to an inode whose primary
+ * dentry is a stray, then evaluate the inode for purging if
+ * we have the auth copy, or migrate the stray to use if we
+ * do not.
+ */
 void MDCache::eval_remote(CDentry *dn)
 {
   dout(10) << "eval_remote " << *dn << dendl;
@@ -8909,8 +8924,19 @@ void MDCache::eval_remote(CDentry *dn)
   // refers to stray?
   if (in->get_parent_dn()->get_dir()->get_inode()->is_stray()) {
     if (in->is_auth()) {
-      purge_queue.eval_stray(in->get_parent_dn());
+      maybe_eval_stray(in);
     } else {
+      /*
+       * Inodes get filed into a stray dentry when a client unlinks
+       * the primary DN for them.  However, that doesn't mean there
+       * isn't a remote DN still in the world.  The remote DN just
+       * ends up pointing at a stray.  Strays can pretty much live
+       * forever in this scenario.
+       *
+       * Therefore, we have a special behaviour here: migrate a stray
+       * to <me> when <I> handle a client request with a trace referring
+       * to a stray inode on another MDS.
+       */
       purge_queue.migrate_stray(in->get_parent_dn(), mds->get_nodeid());
     }
   }
@@ -11373,4 +11399,41 @@ void MDCache::register_perfcounters()
     recovery_queue.set_logger(logger);
     purge_queue.set_logger(logger);
 }
+
+/**
+ * Call this when putting references to an inode/dentry or
+ * when attempting to trim it.
+ *
+ * If this inode is no longer linked by anyone, and this MDS
+ * rank holds the primary dentry, and that dentry is in a stray
+ * directory, then give up the dentry to the PurgeQueue, never
+ * to be seen again by MDCache.
+ *
+ * @param delay if true, then purgeable inodes are stashed til
+ *              the next trim(), rather than being purged right
+ *              away.
+ */
+void MDCache::maybe_eval_stray(CInode *in, bool delay) {
+  if (in->inode.nlink > 0 || in->is_base() || is_readonly() || mds->is_standby_replay())
+    return;
+  CDentry *dn = in->get_projected_parent_dn();
+
+  if (dn->state_test(CDentry::STATE_PURGING)) {
+    /* We have already entered the purging process, no need
+     * to re-evaluate me ! */
+    return;
+  }
+
+  if (dn->get_projected_linkage()->is_primary() &&
+      dn->get_dir()->get_inode()->is_stray()) {
+    const bool purging = purge_queue.eval_stray(dn, delay);
+
+    if (purging) {
+      // Pass the ownership of the CInode on to PurgeQueue, such
+      // that nobody from our side may take more references to it.
+      inode_map.erase(in->vino());
+    }
+  }
+}
+
 

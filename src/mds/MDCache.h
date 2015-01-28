@@ -138,17 +138,17 @@ public:
   void advance_stray() {
     stray_index = (stray_index+1)%NUM_STRAY;
   }
-  void eval_stray(CDentry *dn) {purge_queue.eval_stray(dn);}
-  void maybe_eval_stray(CInode *in, bool delay=false) {
-    if (in->inode.nlink > 0 || in->is_base() || is_readonly())
-      return;
-    CDentry *dn = in->get_projected_parent_dn();
-    if (!dn->state_test(CDentry::STATE_PURGING) &&
-	dn->get_projected_linkage()->is_primary() &&
-	dn->get_dir()->get_inode()->is_stray())
-      purge_queue.eval_stray(dn, delay);
+
+  /**
+   * Call this when you know that a CDentry is ready to be passed
+   * on to PurgeQueue (i.e. this is a stray you've just created)
+   */
+  void notify_stray(CDentry *dn) {
+    assert(dn->get_dir()->get_inode()->is_stray());
+    purge_queue.eval_stray(dn);
   }
 
+  void maybe_eval_stray(CInode *in, bool delay=false);
   bool is_readonly() { return readonly; }
   void force_readonly();
 

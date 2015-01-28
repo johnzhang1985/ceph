@@ -36,14 +36,6 @@ class PurgeQueue
 
   // Global references for doing I/O
   MDS *mds;
-  /** So, it sucks to have a circular reference here
-   * back to our parent mdcache.  It's used for remove_inode
-   * and for touch_dentry_bottom.  Both of those are
-   * actually pure *outputs* from this entity: we
-   * dont need a ref to mdcache, we just need a mailbox to
-   * send notifications to that we want to remove or
-   * bump this inode.  Hmm.  */
-  MDCache *mdcache;
   PerfCounters *logger;
 
   // Throttled allowances
@@ -52,6 +44,7 @@ class PurgeQueue
 
   // Statistics
   uint64_t num_strays;
+  uint64_t num_strays_purging;
   uint64_t num_strays_delayed;
 
   void purge(CDentry *dn, uint32_t op_allowance);
@@ -77,7 +70,7 @@ class PurgeQueue
 
   void enqueue(CDentry *dn);
   void advance_delayed();
-  void eval_stray(CDentry *dn, bool delay=false);
+  bool eval_stray(CDentry *dn, bool delay=false);
   void reintegrate_stray(CDentry *dn, CDentry *rlink);
   void migrate_stray(CDentry *dn, mds_rank_t dest);
 

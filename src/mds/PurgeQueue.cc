@@ -58,6 +58,9 @@ public:
 };
 
 
+/**
+ * Context wrapper for _purge_stray_purged completion
+ */
 class C_IO_PurgeStrayPurged : public PurgeQueueIOContext {
   CDentry *dn;
   // How many ops_in_flight were allocated to this purge?
@@ -87,6 +90,9 @@ void PurgeQueue::purge(CDentry *dn, uint32_t op_allowance)
   dn->state_set(CDentry::STATE_PURGING);
   dn->get(CDentry::PIN_PURGING);
   in->state_set(CInode::STATE_PURGING);
+
+  num_strays_purging++;
+  logger->set(l_mdc_num_strays_purging, num_strays_purging);
 
   if (dn->item_stray.is_on_list()) {
     dn->item_stray.remove_myself();
@@ -192,72 +198,20 @@ public:
   }
 };
 
-#ifdef HANDLE_ROGUE_REFS
-class C_PurgeStrayLoggedTruncate : public PurgeQueueContext {
-  CDentry *dn;
-  LogSegment *ls;
-public:
-  C_PurgeStrayLoggedTruncate(PurgeQueue *pq_, CDentry *d, LogSegment *s) : 
-    PurgeQueueContext(pq_), dn(d), ls(s) { }
-  void finish(int r) {
-    pq->_purge_stray_logged_truncate(dn, ls);
-  }
-};
-#endif
-
+/**
+ * Completion handler for a Filer::purge on a stray inode.
+ *
+ *
+ */
 void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
 {
   assert (r == 0 || r == -ENOENT);
   CInode *in = dn->get_projected_linkage()->get_inode();
   dout(10) << "_purge_stray_purged " << *dn << " " << *in << dendl;
 
-  if (in->get_num_ref() == (int)in->is_dirty() &&
-      dn->get_num_ref() == (int)dn->is_dirty() + !!in->get_num_ref() + 1/*PIN_PURGING*/) {
-    // kill dentry.
-    version_t pdv = dn->pre_dirty();
-    dn->push_projected_linkage(); // NULL
 
-    EUpdate *le = new EUpdate(mds->mdlog, "purge_stray");
-    mds->mdlog->start_entry(le);
-
-    // update dirfrag fragstat, rstat
-    CDir *dir = dn->get_dir();
-    fnode_t *pf = dir->project_fnode();
-    pf->version = dir->pre_dirty();
-    if (in->is_dir())
-      pf->fragstat.nsubdirs--;
-    else
-      pf->fragstat.nfiles--;
-    pf->rstat.sub(in->inode.accounted_rstat);
-
-    le->metablob.add_dir_context(dn->dir);
-    EMetaBlob::dirlump& dl = le->metablob.add_dir(dn->dir, true);
-    le->metablob.add_null_dentry(dl, dn, true);
-    le->metablob.add_destroyed_inode(in->ino());
-
-    mds->mdlog->submit_entry(le, new C_PurgeStrayLogged(this, dn, pdv, mds->mdlog->get_current_segment()));
-
-    num_strays--;
-    logger->set(l_mdc_num_strays, num_strays);
-    logger->inc(l_mdc_strays_purged);
-  } else {
-#ifdef HANDLE_ROGUE_REFS
-    // new refs.. just truncate to 0
-    EUpdate *le = new EUpdate(mds->mdlog, "purge_stray truncate");
-    mds->mdlog->start_entry(le);
-    
-    inode_t *pi = in->project_inode();
-    pi->size = 0;
-    pi->client_ranges.clear();
-    pi->truncate_size = 0;
-    pi->truncate_from = 0;
-    pi->version = in->pre_dirty();
-
-    le->metablob.add_dir_context(dn->dir);
-    le->metablob.add_primary_dentry(dn, in, true);
-
-    mds->mdlog->submit_entry(le, new C_PurgeStrayLoggedTruncate(this, dn, mds->mdlog->get_current_segment()));
-#else
+  if (in->get_num_ref() != (int)in->is_dirty() ||
+      dn->get_num_ref() != (int)dn->is_dirty() + !!in->get_num_ref() + 1/*PIN_PURGING*/) {
     /*
      * Nobody should be taking new references to an inode when it
      * is being purged.  However, there may be some buggy code that
@@ -266,19 +220,44 @@ void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
 
     derr << "Rogue reference after purge to " << *dn << dendl;
     assert(0 == "rogue reference to purging inode");
-#endif
   }
 
-  dout(10) << __func__ << ": decrementing allowances: ops "
-    << ops_allowance << "/" << ops_in_flight
-    << " files 1/" << files_purging << dendl;
+  // kill dentry.
+  version_t pdv = dn->pre_dirty();
+  dn->push_projected_linkage(); // NULL
+
+  EUpdate *le = new EUpdate(mds->mdlog, "purge_stray");
+  mds->mdlog->start_entry(le);
+
+  // update dirfrag fragstat, rstat
+  CDir *dir = dn->get_dir();
+  fnode_t *pf = dir->project_fnode();
+  pf->version = dir->pre_dirty();
+  if (in->is_dir())
+    pf->fragstat.nsubdirs--;
+  else
+    pf->fragstat.nfiles--;
+  pf->rstat.sub(in->inode.accounted_rstat);
+
+  le->metablob.add_dir_context(dn->dir);
+  EMetaBlob::dirlump& dl = le->metablob.add_dir(dn->dir, true);
+  le->metablob.add_null_dentry(dl, dn, true);
+  le->metablob.add_destroyed_inode(in->ino());
+
+  mds->mdlog->submit_entry(le, new C_PurgeStrayLogged(this, dn, pdv, mds->mdlog->get_current_segment()));
+
+  num_strays_purging--;
+  num_strays--;
+  logger->set(l_mdc_num_strays, num_strays);
+  logger->set(l_mdc_num_strays_purging, num_strays_purging);
+  logger->inc(l_mdc_strays_purged);
 
   // Release resources
+  dout(10) << __func__ << ": decrementing allowance "
+    << ops_allowance << " from " << ops_in_flight << " in flight" << dendl;
   assert(ops_in_flight >= ops_allowance);
   ops_in_flight -= ops_allowance;
-  logger->set(l_mdc_num_purge_ops, ops_in_flight);
   files_purging -= 1;
-  logger->set(l_mdc_num_strays_purging, files_purging);
   _advance();
 }
 
@@ -305,32 +284,36 @@ void PurgeQueue::_purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls)
   if (in->is_dirty())
     in->mark_clean();
 
-  mdcache->remove_inode(in);
-
   // drop dentry?
   if (dn->is_new()) {
     dout(20) << " dn is new, removing" << dendl;
     dn->mark_clean();
     dn->dir->remove_dentry(dn);
+
+    // Clear down the CInode, equivalent to MDCache::remove_inode but
+    // without removing from inode_map (this was done by MDCache at
+    // the stage the inode was passed through to purgequeue)
+    {
+      if (in->is_dirty())
+        in->mark_clean();
+      if (in->is_dirty_parent())
+        in->clear_dirty_parent();
+
+      in->filelock.remove_dirty();
+      in->nestlock.remove_dirty();
+      in->dirfragtreelock.remove_dirty();
+      in->item_open_file.remove_myself();
+
+      assert(in->get_num_ref() == 0);
+      delete in; 
+    }
+    
+
   } else {
-    mdcache->touch_dentry_bottom(dn);  // drop dn as quickly as possible.
+    in->mdcache->touch_dentry_bottom(dn);  // drop dn as quickly as possible.
   }
 }
 
-#ifdef HANDLE_ROGUE_REFS
-void PurgeQueue::_purge_stray_logged_truncate(CDentry *dn, LogSegment *ls)
-{
-  CInode *in = dn->get_projected_linkage()->get_inode();
-  dout(10) << "_purge_stray_logged_truncate " << *dn << " " << *in << dendl;
-
-  dn->state_clear(CDentry::STATE_PURGING);
-  dn->put(CDentry::PIN_PURGING);
-
-  in->pop_and_dirty_projected_inode(ls);
-
-  eval_stray(dn);
-}
-#endif
 
 void PurgeQueue::enqueue(CDentry *dn)
 {
@@ -346,6 +329,11 @@ void PurgeQueue::enqueue(CDentry *dn)
   }
 }
 
+
+/**
+ * Iteratively call _consume on items from the ready_for_purge
+ * list until it returns false (throttle limit reached)
+ */
 void PurgeQueue::_advance()
 {
   std::list<CDentry*>::iterator i;
@@ -415,15 +403,11 @@ bool PurgeQueue::_consume(CDentry *dn)
     return false;
   }
 
-  dout(10) << __func__ << ": allocating allowances: ops "
-    << ops_required << "/" << ops_in_flight
-    << " files 1/" << files_purging << dendl;
-
   // Resources are available, acquire them and execute the purge
   files_purging += 1;
-  logger->set(l_mdc_num_strays_purging, files_purging);
+  dout(10) << __func__ << ": allocating allowance "
+    << ops_required << " to " << ops_in_flight << " in flight" << dendl;
   ops_in_flight += ops_required;
-  logger->set(l_mdc_num_purge_ops, ops_in_flight);
   purge(dn, ops_required);
   return true;
 }
@@ -468,7 +452,11 @@ void PurgeQueue::advance_delayed()
     ++p;
     dn->item_stray.remove_myself();
     num_strays_delayed--;
-    eval_stray(dn);
+    const bool purging = eval_stray(dn);
+    if (!purging) {
+      derr << "Dentry " << *dn << " went for purgeable to unpurgeable!" << dendl;
+    }
+    assert(purging);
   }
   logger->set(l_mdc_num_strays_delayed, num_strays_delayed);
 }
@@ -499,7 +487,20 @@ struct C_EvalStray : public PurgeQueueContext {
 };
 
 
-void PurgeQueue::eval_stray(CDentry *dn, bool delay)
+/**
+ * Evaluate a stray dentry for purging or reintegration.
+ *
+ * If the inode has no linkage, and no more references, then
+ * we may decide to purge it.
+ *
+ * If the inode still has linkage, then it means someone else
+ * (a hard link) is still referring to it, and we should
+ * think about reintegrating that inode into the remote dentry.
+ *
+ * @returns true if the dentry will be purged (caller should never
+ *          take more refs after this happens), else false.
+ */
+bool PurgeQueue::eval_stray(CDentry *dn, bool delay)
 {
   dout(10) << "eval_stray " << *dn << dendl;
   CDentry::linkage_t *dnl = dn->get_projected_linkage();
@@ -508,14 +509,21 @@ void PurgeQueue::eval_stray(CDentry *dn, bool delay)
   CInode *in = dnl->get_inode();
   assert(in);
 
+  // The only dentries elegible for purging are those
+  // in the stray directories
   assert(dn->get_dir()->get_inode()->is_stray());
+
+  // Inode may not pass through this function if it
+  // was already identified for purging (i.e. cannot
+  // call eval_stray() after purge()
+  assert(!dn->state_test(CDentry::STATE_PURGING));
 
   if (!dn->is_auth()) {
     // has to be mine
     // move to bottom of lru so that we trim quickly!
 
-    mdcache->touch_dentry_bottom(dn);
-    return;
+    in->mdcache->touch_dentry_bottom(dn);
+    return false;
   }
 
   // purge?
@@ -527,38 +535,38 @@ void PurgeQueue::eval_stray(CDentry *dn, bool delay)
       if (in->snaprealm && in->snaprealm->has_past_parents()) {
 	if (!in->snaprealm->have_past_parents_open() &&
 	    !in->snaprealm->open_parents(new C_EvalStray(this, dn)))
-	  return;
+	  return false;
 	in->snaprealm->prune_past_parents();
 	if (in->snaprealm->has_past_parents()) {
 	  dout(20) << "  has past parents " << in->snaprealm->srnode.past_parents << dendl;
-	  return;  // not until some snaps are deleted.
+	  return false;  // not until some snaps are deleted.
 	}
       }
     }
     if (dn->is_replicated()) {
       dout(20) << " replicated" << dendl;
-      return;
+      return false;
     }
     if (dn->is_any_leases() || in->is_any_caps()) {
       dout(20) << " caps | leases" << dendl;
-      return;  // wait
+      return false;  // wait
     }
     if (dn->state_test(CDentry::STATE_PURGING)) {
       dout(20) << " already purging" << dendl;
-      return;  // already purging
+      return false;  // already purging
     }
     if (in->state_test(CInode::STATE_NEEDSRECOVER) ||
 	in->state_test(CInode::STATE_RECOVERING)) {
       dout(20) << " pending recovery" << dendl;
-      return;  // don't mess with file size probing
+      return false;  // don't mess with file size probing
     }
     if (in->get_num_ref() > (int)in->is_dirty() + (int)in->is_dirty_parent()) {
       dout(20) << " too many inode refs" << dendl;
-      return;
+      return false;
     }
     if (dn->get_num_ref() > (int)dn->is_dirty() + !!in->get_num_ref()) {
       dout(20) << " too many dn refs" << dendl;
-      return;
+      return false;
     }
     if (delay) {
       if (!dn->item_stray.is_on_list()) {
@@ -567,12 +575,17 @@ void PurgeQueue::eval_stray(CDentry *dn, bool delay)
 	logger->set(l_mdc_num_strays_delayed, num_strays_delayed);
       }
     } else {
-      if (in->is_dir())
+      if (in->is_dir()) {
 	in->close_dirfrags();
+      }
+
       enqueue(dn);
     }
-  }
-  else if (in->inode.nlink >= 1) {
+
+    return true;
+  } else {
+    assert(in->inode.nlink >= 1);
+
     // trivial reintegrate?
     if (!in->remote_parents.empty()) {
       CDentry *rlink = *in->remote_parents.begin();
@@ -581,19 +594,35 @@ void PurgeQueue::eval_stray(CDentry *dn, bool delay)
       // break user-visible semantics!
       // NOTE: we repeat this check in _rename(), since our submission path is racey.
       if (!rlink->is_projected()) {
-	if (rlink->is_auth() && rlink->dir->can_auth_pin())
+	if (rlink->is_auth() && rlink->dir->can_auth_pin()) {
 	  reintegrate_stray(dn, rlink);
-	
-	if (!rlink->is_auth() && dn->is_auth())
+        } else if (!rlink->is_auth() && dn->is_auth()) {
 	  migrate_stray(dn, rlink->authority().first);
+        } else {
+          dout(20) << __func__ << ": not reintegrating" << dendl;
+        }
+      } else {
+        dout(20) << __func__ << ": not reintegrating (projected)" << dendl;
       }
+    } else {
+      dout(20) << __func__
+        << ": not reintegrating (no remote parents in cache)" << dendl;
     }
-  } else {
-    // wait for next use.
+
+    return false;
   }
 }
 
 
+/**
+ * When hard links exist to an inode whose primary dentry
+ * is unlinked, the inode gets a stray primary dentry.
+ *
+ * We may later "reintegrate" the inode into a remaining
+ * non-stray dentry (one of what was previously a remote
+ * dentry) by issuing a rename from the stray to the other
+ * dentry.
+ */
 void PurgeQueue::reintegrate_stray(CDentry *straydn, CDentry *rdn)
 {
   dout(10) << __func__ << " " << *straydn << " into " << *rdn << dendl;
@@ -613,6 +642,22 @@ void PurgeQueue::reintegrate_stray(CDentry *straydn, CDentry *rdn)
 }
  
 
+/**
+ * Given a dentry within one of my stray directories,
+ * send it off to a stray directory in another MDS.
+ *
+ * This is for use:
+ *  * when shutting down a rank we migrate strays
+ *    away from ourselves rather than waiting for purge
+ *  * when we encounter a client backtrace that indicates
+ *    a remote inode referring to a stray belonging to
+ *    another MDS, we migrate it to ourselves.
+ *
+ *  XXX FIXME but this doesn't make sense, there can be more than
+ *  one remote link to a stray, so if they belong to different
+ *  MDSs aren't we just going to thrash the shit out of the stray
+ *  inode moving it between two different remote dirs?
+ */
 void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
 {
   CInode *in = dn->get_linkage()->get_inode();
@@ -641,9 +686,9 @@ void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
 
   PurgeQueue::PurgeQueue(MDS *mds, MDCache *mdc)
   : delayed_eval_stray(member_offset(CDentry, item_stray)),
-    mds(mds), mdcache(mdc), logger(NULL),
+    mds(mds), logger(NULL),
     ops_in_flight(0), files_purging(0),
-    num_strays(0), num_strays_delayed(0)
+    num_strays(0), num_strays_purging(0), num_strays_delayed(0)
 {
   assert(mds != NULL);
 
