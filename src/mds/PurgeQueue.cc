@@ -588,6 +588,9 @@ bool PurgeQueue::eval_stray(CDentry *dn, bool delay)
 
     // trivial reintegrate?
     if (!in->remote_parents.empty()) {
+      // FIXME: instead of picking one remote link then doing nothing
+      // if it is not auth, pick one that *is* auth, or let caller
+      // pass in tracedn from the request that triggered us to do this
       CDentry *rlink = *in->remote_parents.begin();
       
       // don't do anything if the remote parent is projected, or we may
