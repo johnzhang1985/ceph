@@ -8919,13 +8919,20 @@ void MDCache::eval_remote(CDentry *dn)
   CDentry::linkage_t *dnl = dn->get_projected_linkage();
   assert(dnl->is_remote());
   CInode *in = dnl->get_inode();
-  if (!in) return;
+
+  // Only called after traversing remote dentry, so inode will
+  // be available
+  assert(in);
 
   // refers to stray?
   if (in->get_parent_dn()->get_dir()->get_inode()->is_stray()) {
     if (in->is_auth()) {
-      maybe_eval_stray(in);
+      dout(20) << __func__ << ": have auth for inode, evaluating" << dendl;
+
+      const bool purging = purge_queue.eval_stray(in->get_parent_dn());
+      assert(!purging); // nlink > 0, as this remote dentry exists
     } else {
+      dout(20) << __func__ << ": do not have auth for inode, migrating " << dendl;
       /*
        * Inodes get filed into a stray dentry when a client unlinks
        * the primary DN for them.  However, that doesn't mean there
@@ -8939,6 +8946,8 @@ void MDCache::eval_remote(CDentry *dn)
        */
       purge_queue.migrate_stray(in->get_parent_dn(), mds->get_nodeid());
     }
+  } else {
+    dout(20) << __func__ << ": inode's primary dn not stray" << dendl;
   }
 }
 
