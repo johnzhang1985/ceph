@@ -1099,6 +1099,11 @@ void Server::reply_client_request(MDRequestRef& mdr, MClientReply *reply)
     dout(10) << "  tracei not set" << dendl;
   }
 
+  if (tracedn) {
+    dout(10) << "  tracedn: " << *tracedn << dendl;
+    dout(10) << "  tracedn remote: " << tracedn->get_projected_linkage()->is_remote() << dendl;
+  }
+
   // take a closer look at tracei, if it happens to be a remote link
   if (tracei && 
       tracedn &&
@@ -6570,12 +6575,13 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
   CInode *in = srcdnl->get_inode();
   assert(in);
 
-  bool srcdn_was_remote = srcdnl->is_remote();
-  srcdn->get_dir()->unlink_inode(srcdn);
-  if (MDS_INO_IS_STRAY(srcdn->get_dir()->inode->is_stray())) {
-    // Update stray counters
+  if (srcdn->get_dir()->inode->is_stray()) {
+    dout(10) << __func__ << ": dentry was a stray, updating stats" << dendl;
     mdcache->notify_stray_removed();
   }
+
+  bool srcdn_was_remote = srcdnl->is_remote();
+  srcdn->get_dir()->unlink_inode(srcdn);
 
   // dest
   if (srcdn_was_remote) {

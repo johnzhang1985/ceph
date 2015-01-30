@@ -716,10 +716,14 @@ CDentry *MDCache::get_or_create_stray_dentry(CInode *in)
   if (!straydn) {
     straydn = straydir->add_null_dentry(straydname);
     straydn->mark_new();
-    purge_queue.notify_stray_created();
   } else {
     assert(straydn->get_projected_linkage()->is_null());
   }
+
+  // Notify even if a null dentry already existed, because
+  // PurgeQueue counts the number of stray inodes, not the
+  // number of dentries in the directory.
+  purge_queue.notify_stray_created();
 
   straydn->state_set(CDentry::STATE_STRAY);
   return straydn;

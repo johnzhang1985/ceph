@@ -75,7 +75,7 @@ struct MDSlaveUpdate;
 
 enum {
   l_mdc_first = 3000,
-  // How many dentries are currently in stray dirs
+  // How many inodes currently in stray dentries
   l_mdc_num_strays,
   // How many stray dentries are currently being purged
   l_mdc_num_strays_purging,
