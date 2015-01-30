@@ -178,6 +178,11 @@ public:
     r->ttl = ttl;
   }
 
+  void notify_stray_removed()
+  {
+    purge_queue.notify_stray_removed();
+  }
+
   // -- client caps --
   uint64_t              last_cap_id;
   

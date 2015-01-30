@@ -6572,6 +6572,10 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
 
   bool srcdn_was_remote = srcdnl->is_remote();
   srcdn->get_dir()->unlink_inode(srcdn);
+  if (MDS_INO_IS_STRAY(srcdn->get_dir()->inode->is_stray())) {
+    // Update stray counters
+    mdcache->notify_stray_removed();
+  }
 
   // dest
   if (srcdn_was_remote) {

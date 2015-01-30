@@ -1,4 +1,3 @@
-// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*- 
 // vim: ts=8 sw=2 smarttab
 /*
  * Ceph - scalable distributed file system
@@ -77,6 +76,7 @@ class PurgeQueue
   PurgeQueue(MDS *mds, MDCache *mdc);
   void set_logger(PerfCounters *l) {logger = l;}
   void notify_stray_created();
+  void notify_stray_removed();
 };
 
 #endif  // PURGE_QUEUE_H

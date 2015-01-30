@@ -477,6 +477,12 @@ void PurgeQueue::notify_stray_created()
   logger->inc(l_mdc_strays_created);
 }
 
+void PurgeQueue::notify_stray_removed()
+{
+  num_strays--;
+  logger->set(l_mdc_num_strays, num_strays);
+}
+
 
 struct C_EvalStray : public PurgeQueueContext {
   CDentry *dn;
