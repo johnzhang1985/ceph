@@ -8915,14 +8915,17 @@ void MDCache::try_remove_dentries_for_stray(CInode* diri) {
  */
 void MDCache::eval_remote(CDentry *dn)
 {
+  assert(dn);
   dout(10) << "eval_remote " << *dn << dendl;
+
   CDentry::linkage_t *dnl = dn->get_projected_linkage();
   assert(dnl->is_remote());
   CInode *in = dnl->get_inode();
 
-  // Only called after traversing remote dentry, so inode will
-  // be available
-  assert(in);
+  if (!in) {
+    dout(20) << __func__ << ": no inode, cannot evaluate" << dendl;
+    return;
+  }
 
   // refers to stray?
   if (in->get_parent_dn()->get_dir()->get_inode()->is_stray()) {
@@ -11395,6 +11398,7 @@ void MDCache::register_perfcounters()
     pcb.add_u64(l_mdc_num_purge_ops, "num_purge_ops");
     pcb.add_u64_counter(l_mdc_strays_created, "strays_created");
     pcb.add_u64_counter(l_mdc_strays_purged, "strays_purged");
+    pcb.add_u64_counter(l_mdc_strays_reintegrated, "strays_reintegrated");
 
     /* Recovery queue statistics */
     pcb.add_u64(l_mdc_num_recovering_processing, "num_recovering_processing");

@@ -629,6 +629,8 @@ bool PurgeQueue::eval_stray(CDentry *dn, bool delay)
 void PurgeQueue::reintegrate_stray(CDentry *straydn, CDentry *rdn)
 {
   dout(10) << __func__ << " " << *straydn << " into " << *rdn << dendl;
+
+  logger->inc(l_mdc_strays_reintegrated);
   
   // rename it to another mds.
   filepath src;

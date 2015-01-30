@@ -87,6 +87,8 @@ enum {
   l_mdc_strays_created,
   // How many dentries have ever finished purging from stray dir
   l_mdc_strays_purged,
+  // How many strays have been reintegrated?
+  l_mdc_strays_reintegrated,
 
   // How many inode sizes currently being recovered
   l_mdc_num_recovering_processing,
