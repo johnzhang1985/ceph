@@ -454,9 +454,15 @@ void PurgeQueue::advance_delayed()
     num_strays_delayed--;
     const bool purging = eval_stray(dn);
     if (!purging) {
-      derr << "Dentry " << *dn << " went for purgeable to unpurgeable!" << dendl;
+      derr << "Dentry " << *dn << " was purgeable but no longer is!" << dendl;
+      /*
+       * This can happen if a stray is purgeable, but has gained an extra
+       * reference by virtue of having its backtrace updated.
+       * FIXME perhaps we could simplify this further by
+       * avoiding writing the backtrace of purge-ready strays, so
+       * that this code could be more rigid?
+       */
     }
-    assert(purging);
   }
   logger->set(l_mdc_num_strays_delayed, num_strays_delayed);
 }
