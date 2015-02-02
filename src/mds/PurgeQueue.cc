@@ -737,7 +737,6 @@ void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
 {
   assert(mds != NULL);
 
-  assert(g_conf->mds_max_purge_files > 0);
   assert(g_conf->mds_max_purge_ops >= g_conf->filer_max_purge_ops);
 }
 
