@@ -11403,6 +11403,7 @@ void MDCache::register_perfcounters()
     pcb.add_u64_counter(l_mdc_strays_created, "strays_created");
     pcb.add_u64_counter(l_mdc_strays_purged, "strays_purged");
     pcb.add_u64_counter(l_mdc_strays_reintegrated, "strays_reintegrated");
+    pcb.add_u64_counter(l_mdc_strays_migrated, "strays_migrated");
 
     /* Recovery queue statistics */
     pcb.add_u64(l_mdc_num_recovering_processing, "num_recovering_processing");

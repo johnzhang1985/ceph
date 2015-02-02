@@ -664,16 +664,15 @@ void PurgeQueue::reintegrate_stray(CDentry *straydn, CDentry *rdn)
  * send it off to a stray directory in another MDS.
  *
  * This is for use:
- *  * when shutting down a rank we migrate strays
+ *  * Case A: when shutting down a rank we migrate strays
  *    away from ourselves rather than waiting for purge
- *  * when we encounter a client backtrace that indicates
+ *  * Case B: when we encounter a client backtrace that indicates
  *    a remote inode referring to a stray belonging to
  *    another MDS, we migrate it to ourselves.
  *
- *  XXX FIXME but this doesn't make sense, there can be more than
- *  one remote link to a stray, so if they belong to different
- *  MDSs aren't we just going to thrash the shit out of the stray
- *  inode moving it between two different remote dirs?
+ * In case B, the receiver should be calling into eval_stray
+ * on completion of mv (i.e. inode put), resulting in a subsequent
+ * reintegration.
  */
 void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
 {
@@ -684,6 +683,8 @@ void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
   dout(10) << "migrate_stray from mds." << MDS_INO_STRAY_OWNER(diri->inode.ino)
 	   << " to mds." << to
 	   << " " << *dn << " " << *in << dendl;
+
+  logger->inc(l_mdc_strays_migrated);
 
   // rename it to another mds.
   filepath src;
