@@ -49,11 +49,6 @@ class PurgeQueue
   void purge(CDentry *dn, uint32_t op_allowance);
   void _purge_stray_purged(CDentry *dn, uint32_t ops, int r=0);
   void _purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls);
-#ifdef HANDLE_ROGUE_REFS
-  void _purge_stray_logged_truncate(CDentry *dn, LogSegment *ls);
-  friend class C_PurgeStrayLoggedTruncate;
-#endif
-
 
   friend class PurgeQueueIOContext;
   friend class PurgeQueueContext;
@@ -65,14 +60,14 @@ class PurgeQueue
   bool _consume(CDentry *dn);
   uint32_t _calculate_ops_required(CInode *in);
 
+  void reintegrate_stray(CDentry *dn, CDentry *rlink);
+
   public:
 
   void enqueue(CDentry *dn);
   void advance_delayed();
   bool eval_stray(CDentry *dn, bool delay=false);
   void eval_remote_stray(CDentry *stray_dn, CDentry *remote_dn=NULL);
-
-  void reintegrate_stray(CDentry *dn, CDentry *rlink);
   void migrate_stray(CDentry *dn, mds_rank_t dest);
 
   PurgeQueue(MDS *mds, MDCache *mdc);

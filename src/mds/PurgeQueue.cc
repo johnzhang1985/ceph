@@ -87,10 +87,6 @@ void PurgeQueue::purge(CDentry *dn, uint32_t op_allowance)
   dout(10) << __func__ << " " << *dn << " " << *in << dendl;
   assert(!dn->is_replicated());
 
-  dn->state_set(CDentry::STATE_PURGING);
-  dn->get(CDentry::PIN_PURGING);
-  in->state_set(CInode::STATE_PURGING);
-
   num_strays_purging++;
   logger->set(l_mdc_num_strays_purging, num_strays_purging);
 
@@ -253,7 +249,7 @@ void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
   logger->inc(l_mdc_strays_purged);
 
   // Release resources
-  dout(10) << __func__ << ": decrementing allowance "
+  dout(10) << __func__ << ": decrementing op allowance "
     << ops_allowance << " from " << ops_in_flight << " in flight" << dendl;
   assert(ops_in_flight >= ops_allowance);
   ops_in_flight -= ops_allowance;
@@ -318,6 +314,17 @@ void PurgeQueue::_purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls)
 
 void PurgeQueue::enqueue(CDentry *dn)
 {
+  CDentry::linkage_t *dnl = dn->get_projected_linkage();
+  assert(dnl);
+  CInode *in = dnl->get_inode();
+  assert(in);
+
+  /* We consider a stray to be purging as soon as it is enqueued, to avoid
+   * enqueing it twice */
+  dn->state_set(CDentry::STATE_PURGING);
+  dn->get(CDentry::PIN_PURGING);
+  in->state_set(CInode::STATE_PURGING);
+
   // Try to purge immediately if possible, else enqueue
   bool consumed = _consume(dn);
   if (consumed) {
@@ -379,6 +386,8 @@ bool PurgeQueue::_consume(CDentry *dn)
   if (files_avail <= 0) {
     dout(20) << __func__ << ": throttling on max files" << dendl;
     return false;
+  } else {
+    dout(20) << __func__ << ": purging dn: " << *dn << dendl;
   }
 
   CDentry::linkage_t *dnl = dn->get_projected_linkage();

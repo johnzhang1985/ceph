@@ -7230,6 +7230,7 @@ bool MDCache::shutdown_export_strays()
       if (dnl->is_null()) continue;
       done = false;
       
+      /* FIXME don't try and move a dentry that is in the process of purging */
       // FIXME: we'll deadlock if a rename fails.
       if (exported_strays.count(dnl->get_inode()->ino()) == 0) {
 	exported_strays.insert(dnl->get_inode()->ino());
