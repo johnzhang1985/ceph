@@ -596,37 +596,53 @@ bool PurgeQueue::eval_stray(CDentry *dn, bool delay)
 
     return true;
   } else {
-    assert(in->inode.nlink >= 1);
-
-    // trivial reintegrate?
-    if (!in->remote_parents.empty()) {
-      // FIXME: instead of picking one remote link then doing nothing
-      // if it is not auth, pick one that *is* auth, or let caller
-      // pass in tracedn from the request that triggered us to do this
-      CDentry *rlink = *in->remote_parents.begin();
-      
-      // don't do anything if the remote parent is projected, or we may
-      // break user-visible semantics!
-      // NOTE: we repeat this check in _rename(), since our submission path is racey.
-      if (!rlink->is_projected()) {
-	if (rlink->is_auth() && rlink->dir->can_auth_pin()) {
-	  reintegrate_stray(dn, rlink);
-        } else if (!rlink->is_auth() && dn->is_auth()) {
-	  migrate_stray(dn, rlink->authority().first);
-        } else {
-          dout(20) << __func__ << ": not reintegrating" << dendl;
-        }
-      } else {
-        dout(20) << __func__ << ": not reintegrating (projected)" << dendl;
-      }
-    } else {
-      dout(20) << __func__
-        << ": not reintegrating (no remote parents in cache)" << dendl;
-    }
-
+    /*
+     * Where a stray has some links, they should be remotes, check
+     * if we can do anything with them if we happen to have them in
+     * cache.
+     */
+    eval_remote_stray(dn, NULL);
     return false;
   }
 }
+
+void PurgeQueue::eval_remote_stray(CDentry *stray_dn, CDentry *remote_dn)
+{
+  assert(stray_dn != NULL);
+  assert(stray_dn->get_dir()->get_inode()->is_stray());
+
+  /* If no remote_dn hinted, pick one arbitrarily */
+  if (remote_dn == NULL) {
+    CDentry::linkage_t *stray_dnl = stray_dn->get_projected_linkage();
+    assert(stray_dnl->is_primary());
+    CInode *stray_in = stray_dnl->get_inode();
+    assert(stray_in != NULL);
+    assert(stray_in->inode.nlink >= 1);
+
+    if (!stray_in->remote_parents.empty()) {
+      remote_dn = *stray_in->remote_parents.begin();
+    } else {
+      dout(20) << __func__
+        << ": not reintegrating (no remote parents in cache)" << dendl;
+      return;
+    }
+  }
+    // NOTE: we repeat this check in _rename(), since our submission path is racey.
+    if (!remote_dn->is_projected()) {
+      if (remote_dn->is_auth() && remote_dn->dir->can_auth_pin()) {
+        reintegrate_stray(stray_dn, remote_dn);
+      } else if (!remote_dn->is_auth() && stray_dn->is_auth()) {
+        migrate_stray(stray_dn, remote_dn->authority().first);
+      } else {
+        dout(20) << __func__ << ": not reintegrating" << dendl;
+      }
+    } else {
+      // don't do anything if the remote parent is projected, or we may
+      // break user-visible semantics!
+      dout(20) << __func__ << ": not reintegrating (projected)" << dendl;
+    }
+}
+
 
 
 /**

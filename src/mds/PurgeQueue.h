@@ -70,6 +70,8 @@ class PurgeQueue
   void enqueue(CDentry *dn);
   void advance_delayed();
   bool eval_stray(CDentry *dn, bool delay=false);
+  void eval_remote_stray(CDentry *stray_dn, CDentry *remote_dn=NULL);
+
   void reintegrate_stray(CDentry *dn, CDentry *rlink);
   void migrate_stray(CDentry *dn, mds_rank_t dest);
 

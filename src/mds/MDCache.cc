@@ -8917,12 +8917,12 @@ void MDCache::try_remove_dentries_for_stray(CInode* diri) {
  * we have the auth copy, or migrate the stray to use if we
  * do not.
  */
-void MDCache::eval_remote(CDentry *dn)
+void MDCache::eval_remote(CDentry *remote_dn)
 {
-  assert(dn);
-  dout(10) << "eval_remote " << *dn << dendl;
+  assert(remote_dn);
+  dout(10) << "eval_remote " << *remote_dn << dendl;
 
-  CDentry::linkage_t *dnl = dn->get_projected_linkage();
+  CDentry::linkage_t *dnl = remote_dn->get_projected_linkage();
   assert(dnl->is_remote());
   CInode *in = dnl->get_inode();
 
@@ -8933,11 +8933,12 @@ void MDCache::eval_remote(CDentry *dn)
 
   // refers to stray?
   if (in->get_parent_dn()->get_dir()->get_inode()->is_stray()) {
+    CDentry *stray_dn = in->get_parent_dn();
+
     if (in->is_auth()) {
       dout(20) << __func__ << ": have auth for inode, evaluating" << dendl;
 
-      const bool purging = purge_queue.eval_stray(in->get_parent_dn());
-      assert(!purging); // nlink > 0, as this remote dentry exists
+      purge_queue.eval_remote_stray(stray_dn, remote_dn);
     } else {
       dout(20) << __func__ << ": do not have auth for inode, migrating " << dendl;
       /*
@@ -8951,7 +8952,7 @@ void MDCache::eval_remote(CDentry *dn)
        * to <me> when <I> handle a client request with a trace referring
        * to a stray inode on another MDS.
        */
-      purge_queue.migrate_stray(in->get_parent_dn(), mds->get_nodeid());
+      purge_queue.migrate_stray(stray_dn, mds->get_nodeid());
     }
   } else {
     dout(20) << __func__ << ": inode's primary dn not stray" << dendl;
