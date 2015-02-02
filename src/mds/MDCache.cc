@@ -7212,10 +7212,13 @@ bool MDCache::shutdown_export_strays()
     }
     strays[i]->get_dirfrags(dfs);
   }
+
+  purge_queue.abort_queue();
   
-  while (!dfs.empty()) {
-    CDir *dir = dfs.front();
-    dfs.pop_front();
+  for (std::list<CDir*>::iterator dfs_i = dfs.begin();
+       dfs_i != dfs.end(); ++dfs_i)
+  {
+    CDir *dir = *dfs_i;
 
     if (!dir->is_complete()) {
       dir->fetch(0);
@@ -7230,7 +7233,12 @@ bool MDCache::shutdown_export_strays()
       if (dnl->is_null()) continue;
       done = false;
       
-      /* FIXME don't try and move a dentry that is in the process of purging */
+      if (dn->state_test(CDentry::STATE_PURGING)) {
+        // Don't try to migrate anything that is actually
+        // being purged right now
+        continue;
+      }
+
       // FIXME: we'll deadlock if a rename fails.
       if (exported_strays.count(dnl->get_inode()->ino()) == 0) {
 	exported_strays.insert(dnl->get_inode()->ino());

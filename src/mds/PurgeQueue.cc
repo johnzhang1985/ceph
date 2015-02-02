@@ -742,3 +742,32 @@ void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
 }
 
 
+/**
+ * For any strays that are enqueued for purge, but
+ * currently blocked on throttling, clear their
+ * purging status.  Used during MDS rank shutdown
+ * so that it can migrate these strays instead
+ * of waiting for them to trickle through the
+ * queue.
+ */
+void PurgeQueue::abort_queue()
+{
+  for (std::list<CDentry*>::iterator i = ready_for_purge.begin();
+       i != ready_for_purge.end(); ++i)
+  {
+    CDentry *dn = *i;
+    dout(10) << __func__ << ": aborting enqueued purge " << *dn << dendl;
+
+    CDentry::linkage_t *dnl = dn->get_projected_linkage();
+    assert(dnl);
+    CInode *in = dnl->get_inode();
+    assert(in);
+
+    // Clear flags set in enqueue
+    dn->state_clear(CDentry::STATE_PURGING);
+    dn->put(CDentry::PIN_PURGING);
+    in->state_clear(CInode::STATE_PURGING);
+  }
+  ready_for_purge.clear();
+}
+

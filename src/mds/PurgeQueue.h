@@ -74,6 +74,7 @@ class PurgeQueue
   void set_logger(PerfCounters *l) {logger = l;}
   void notify_stray_created();
   void notify_stray_removed();
+  void abort_queue();
 };
 
 #endif  // PURGE_QUEUE_H
