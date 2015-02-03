@@ -766,6 +766,10 @@ void PurgeQueue::abort_queue()
     dn->state_clear(CDentry::STATE_PURGING);
     dn->put(CDentry::PIN_PURGING);
     in->state_clear(CInode::STATE_PURGING);
+
+    // Reinstate in MDCache by-ino map so that other MDSs
+    // can auth_pin the inode when handling a migrate_stray mv
+    in->mdcache->inode_map[in->vino()] = in;
   }
   ready_for_purge.clear();
 }

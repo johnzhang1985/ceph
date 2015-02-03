@@ -586,6 +586,9 @@ public:
   friend class Locker;
   friend class Migrator;
   friend class MDBalancer;
+  // FIXME hack so that the PurgeQueue can re-insert inode to inode_map
+  // on abort_queue
+  friend class PurgeQueue;
 
 
   // File size recovery
