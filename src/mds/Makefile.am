@@ -8,7 +8,7 @@ libmds_la_SOURCES = \
 	mds/Mutation.cc \
 	mds/MDCache.cc \
 	mds/RecoveryQueue.cc \
-	mds/PurgeQueue.cc \
+	mds/StrayManager.cc \
 	mds/Locker.cc \
 	mds/Migrator.cc \
 	mds/MDBalancer.cc \
@@ -50,7 +50,7 @@ noinst_HEADERS += \
 	mds/MDBalancer.h \
 	mds/MDCache.h \
 	mds/RecoveryQueue.h \
-	mds/PurgeQueue.h \
+	mds/StrayManager.h \
 	mds/MDLog.h \
 	mds/MDS.h \
 	mds/Beacon.h \

@@ -11,8 +11,8 @@
  * 
  */
 
-#ifndef PURGE_QUEUE_H
-#define PURGE_QUEUE_H
+#ifndef STRAY_MANAGER_H
+#define STRAY_MANAGER_H
 
 #include "include/elist.h"
 #include <list>
@@ -22,9 +22,7 @@ class PerfCounters;
 class CInode;
 class CDentry;
 
-#undef HANDLE_ROGUE_REFS
-
-class PurgeQueue
+class StrayManager
 {
   protected:
   // Has passed through eval_stray and still has refs
@@ -50,8 +48,8 @@ class PurgeQueue
   void _purge_stray_purged(CDentry *dn, uint32_t ops, int r=0);
   void _purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls);
 
-  friend class PurgeQueueIOContext;
-  friend class PurgeQueueContext;
+  friend class StrayManagerIOContext;
+  friend class StrayManagerContext;
 
   friend class C_PurgeStrayLogged;
   friend class C_IO_PurgeStrayPurged;
@@ -62,6 +60,7 @@ class PurgeQueue
 
   void reintegrate_stray(CDentry *dn, CDentry *rlink);
 
+  // My public interface is for consumption by MDCache
   public:
 
   void enqueue(CDentry *dn);
@@ -70,11 +69,11 @@ class PurgeQueue
   void eval_remote_stray(CDentry *stray_dn, CDentry *remote_dn=NULL);
   void migrate_stray(CDentry *dn, mds_rank_t dest);
 
-  PurgeQueue(MDS *mds, MDCache *mdc);
+  StrayManager(MDS *mds);
   void set_logger(PerfCounters *l) {logger = l;}
   void notify_stray_created();
   void notify_stray_removed();
   void abort_queue();
 };
 
-#endif  // PURGE_QUEUE_H
+#endif  // STRAY_MANAGER_H

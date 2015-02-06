@@ -27,7 +27,7 @@
 #include "include/Context.h"
 #include "events/EMetaBlob.h"
 #include "RecoveryQueue.h"
-#include "PurgeQueue.h"
+#include "StrayManager.h"
 #include "MDSContext.h"
 
 #include "messages/MClientRequest.h"
@@ -145,11 +145,11 @@ public:
 
   /**
    * Call this when you know that a CDentry is ready to be passed
-   * on to PurgeQueue (i.e. this is a stray you've just created)
+   * on to StrayManager (i.e. this is a stray you've just created)
    */
   void notify_stray(CDentry *dn) {
     assert(dn->get_dir()->get_inode()->is_stray());
-    purge_queue.eval_stray(dn);
+    stray_manager.eval_stray(dn);
   }
 
   void maybe_eval_stray(CInode *in, bool delay=false);
@@ -182,7 +182,7 @@ public:
 
   void notify_stray_removed()
   {
-    purge_queue.notify_stray_removed();
+    stray_manager.notify_stray_removed();
   }
 
   // -- client caps --
@@ -586,9 +586,9 @@ public:
   friend class Locker;
   friend class Migrator;
   friend class MDBalancer;
-  // FIXME hack so that the PurgeQueue can re-insert inode to inode_map
+  // FIXME hack so that the StrayManager can re-insert inode to inode_map
   // on abort_queue
-  friend class PurgeQueue;
+  friend class StrayManager;
 
 
   // File size recovery
@@ -922,7 +922,7 @@ public:
 
 protected:
   void scan_stray_dir(dirfrag_t next=dirfrag_t());
-  PurgeQueue purge_queue;
+  StrayManager stray_manager;
   friend struct C_MDC_RetryScanStray;
   friend class C_IO_MDC_FetchedBacktrace;
 

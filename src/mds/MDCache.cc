@@ -169,7 +169,7 @@ public:
 MDCache::MDCache(MDS *m) :
   logger(0),
   recovery_queue(m),
-  purge_queue(m, this)
+  stray_manager(m)
 {
   mds = m;
   migrator = new Migrator(mds, this);
@@ -721,9 +721,9 @@ CDentry *MDCache::get_or_create_stray_dentry(CInode *in)
   }
 
   // Notify even if a null dentry already existed, because
-  // PurgeQueue counts the number of stray inodes, not the
+  // StrayManager counts the number of stray inodes, not the
   // number of dentries in the directory.
-  purge_queue.notify_stray_created();
+  stray_manager.notify_stray_created();
 
   straydn->state_set(CDentry::STATE_STRAY);
   return straydn;
@@ -6068,7 +6068,7 @@ bool MDCache::trim(int max, int count)
   dout(7) << "trim max=" << max << "  cur=" << lru.lru_get_size() << dendl;
 
   // process delayed eval_stray()
-  purge_queue.advance_delayed();
+  stray_manager.advance_delayed();
 
   map<mds_rank_t, MCacheExpire*> expiremap;
   bool is_standby_replay = mds->is_standby_replay();
@@ -7213,7 +7213,7 @@ bool MDCache::shutdown_export_strays()
     strays[i]->get_dirfrags(dfs);
   }
 
-  purge_queue.abort_queue();
+  stray_manager.abort_queue();
   
   for (std::list<CDir*>::iterator dfs_i = dfs.begin();
        dfs_i != dfs.end(); ++dfs_i)
@@ -7242,7 +7242,7 @@ bool MDCache::shutdown_export_strays()
       // FIXME: we'll deadlock if a rename fails.
       if (exported_strays.count(dnl->get_inode()->ino()) == 0) {
 	exported_strays.insert(dnl->get_inode()->ino());
-	purge_queue.migrate_stray(dn, mds_rank_t(0));  // send to root!
+	stray_manager.migrate_stray(dn, mds_rank_t(0));  // send to root!
       } else {
 	dout(10) << "already exporting " << *dn << dendl;
       }
@@ -8901,7 +8901,7 @@ void MDCache::scan_stray_dir(dirfrag_t next)
     for (CDir::map_t::iterator q = dir->items.begin(); q != dir->items.end(); ++q) {
       CDentry *dn = q->second;
       CDentry::linkage_t *dnl = dn->get_projected_linkage();
-      purge_queue.notify_stray_created();
+      stray_manager.notify_stray_created();
       if (dnl->is_primary()) {
 	maybe_eval_stray(dnl->get_inode());
       }
@@ -8947,7 +8947,7 @@ void MDCache::eval_remote(CDentry *remote_dn)
     if (in->is_auth()) {
       dout(20) << __func__ << ": have auth for inode, evaluating" << dendl;
 
-      purge_queue.eval_remote_stray(stray_dn, remote_dn);
+      stray_manager.eval_remote_stray(stray_dn, remote_dn);
     } else {
       dout(20) << __func__ << ": do not have auth for inode, migrating " << dendl;
       /*
@@ -8961,7 +8961,7 @@ void MDCache::eval_remote(CDentry *remote_dn)
        * to <me> when <I> handle a client request with a trace referring
        * to a stray inode on another MDS.
        */
-      purge_queue.migrate_stray(stray_dn, mds->get_nodeid());
+      stray_manager.migrate_stray(stray_dn, mds->get_nodeid());
     }
   } else {
     dout(20) << __func__ << ": inode's primary dn not stray" << dendl;
@@ -11425,7 +11425,7 @@ void MDCache::register_perfcounters()
     logger = pcb.create_perf_counters();
     g_ceph_context->get_perfcounters_collection()->add(logger);
     recovery_queue.set_logger(logger);
-    purge_queue.set_logger(logger);
+    stray_manager.set_logger(logger);
 }
 
 /**
@@ -11434,7 +11434,7 @@ void MDCache::register_perfcounters()
  *
  * If this inode is no longer linked by anyone, and this MDS
  * rank holds the primary dentry, and that dentry is in a stray
- * directory, then give up the dentry to the PurgeQueue, never
+ * directory, then give up the dentry to the StrayManager, never
  * to be seen again by MDCache.
  *
  * @param delay if true, then purgeable inodes are stashed til
@@ -11454,10 +11454,10 @@ void MDCache::maybe_eval_stray(CInode *in, bool delay) {
 
   if (dn->get_projected_linkage()->is_primary() &&
       dn->get_dir()->get_inode()->is_stray()) {
-    const bool purging = purge_queue.eval_stray(dn, delay);
+    const bool purging = stray_manager.eval_stray(dn, delay);
 
     if (purging) {
-      // Pass the ownership of the CInode on to PurgeQueue, such
+      // Pass the ownership of the CInode on to StrayManager, such
       // that nobody from our side may take more references to it.
       inode_map.erase(in->vino());
     }

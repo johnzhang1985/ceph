@@ -25,7 +25,7 @@
 #include "events/EUpdate.h"
 #include "messages/MClientRequest.h"
 
-#include "PurgeQueue.h"
+#include "StrayManager.h"
 
 #define dout_subsys ceph_subsys_mds
 #undef dout_prefix
@@ -34,40 +34,40 @@ static ostream& _prefix(std::ostream *_dout, MDS *mds) {
   return *_dout << "mds." << mds->get_nodeid() << ".cache.pq ";
 }
 
-class PurgeQueueIOContext : public virtual MDSIOContextBase {
+class StrayManagerIOContext : public virtual MDSIOContextBase {
 protected:
-  PurgeQueue *pq;
+  StrayManager *pq;
   virtual MDS *get_mds()
   {
     return pq->mds;
   }
 public:
-  PurgeQueueIOContext(PurgeQueue *pq_) : pq(pq_) {}
+  StrayManagerIOContext(StrayManager *pq_) : pq(pq_) {}
 };
 
 
-class PurgeQueueContext : public virtual MDSInternalContextBase {
+class StrayManagerContext : public virtual MDSInternalContextBase {
 protected:
-  PurgeQueue *pq;
+  StrayManager *pq;
   virtual MDS *get_mds()
   {
     return pq->mds;
   }
 public:
-  PurgeQueueContext(PurgeQueue *pq_) : pq(pq_) {}
+  StrayManagerContext(StrayManager *pq_) : pq(pq_) {}
 };
 
 
 /**
  * Context wrapper for _purge_stray_purged completion
  */
-class C_IO_PurgeStrayPurged : public PurgeQueueIOContext {
+class C_IO_PurgeStrayPurged : public StrayManagerIOContext {
   CDentry *dn;
   // How many ops_in_flight were allocated to this purge?
   uint32_t ops_allowance;
 public:
-  C_IO_PurgeStrayPurged(PurgeQueue *pq_, CDentry *d, uint32_t ops) : 
-    PurgeQueueIOContext(pq_), dn(d), ops_allowance(ops) { }
+  C_IO_PurgeStrayPurged(StrayManager *pq_, CDentry *d, uint32_t ops) : 
+    StrayManagerIOContext(pq_), dn(d), ops_allowance(ops) { }
   void finish(int r) {
     assert(r == 0 || r == -ENOENT);
     pq->_purge_stray_purged(dn, ops_allowance, r);
@@ -76,11 +76,11 @@ public:
 
 /**
  * Purge a dentry from a stray directory.  This function
- * is called once eval_stray is satisfied and PurgeQueue
+ * is called once eval_stray is satisfied and StrayManager
  * throttling is also satisfied.  There is no going back
  * at this stage!
  */
-void PurgeQueue::purge(CDentry *dn, uint32_t op_allowance)
+void StrayManager::purge(CDentry *dn, uint32_t op_allowance)
 {
   CDentry::linkage_t *dnl = dn->get_projected_linkage();
   CInode *in = dnl->get_inode();
@@ -182,13 +182,13 @@ void PurgeQueue::purge(CDentry *dn, uint32_t op_allowance)
   gather.activate();
 }
 
-class C_PurgeStrayLogged : public PurgeQueueContext {
+class C_PurgeStrayLogged : public StrayManagerContext {
   CDentry *dn;
   version_t pdv;
   LogSegment *ls;
 public:
-  C_PurgeStrayLogged(PurgeQueue *pq_, CDentry *d, version_t v, LogSegment *s) : 
-    PurgeQueueContext(pq_), dn(d), pdv(v), ls(s) { }
+  C_PurgeStrayLogged(StrayManager *pq_, CDentry *d, version_t v, LogSegment *s) : 
+    StrayManagerContext(pq_), dn(d), pdv(v), ls(s) { }
   void finish(int r) {
     pq->_purge_stray_logged(dn, pdv, ls);
   }
@@ -199,7 +199,7 @@ public:
  *
  *
  */
-void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
+void StrayManager::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
 {
   assert (r == 0 || r == -ENOENT);
   CInode *in = dn->get_projected_linkage()->get_inode();
@@ -258,7 +258,7 @@ void PurgeQueue::_purge_stray_purged(CDentry *dn, uint32_t ops_allowance, int r)
   _advance();
 }
 
-void PurgeQueue::_purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls)
+void StrayManager::_purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls)
 {
   CInode *in = dn->get_linkage()->get_inode();
   dout(10) << "_purge_stray_logged " << *dn << " " << *in << dendl;
@@ -312,7 +312,7 @@ void PurgeQueue::_purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *ls)
 }
 
 
-void PurgeQueue::enqueue(CDentry *dn)
+void StrayManager::enqueue(CDentry *dn)
 {
   CDentry::linkage_t *dnl = dn->get_projected_linkage();
   assert(dnl);
@@ -342,7 +342,7 @@ void PurgeQueue::enqueue(CDentry *dn)
  * Iteratively call _consume on items from the ready_for_purge
  * list until it returns false (throttle limit reached)
  */
-void PurgeQueue::_advance()
+void StrayManager::_advance()
 {
   std::list<CDentry*>::iterator i;
   for (i = ready_for_purge.begin();
@@ -379,7 +379,7 @@ void PurgeQueue::_advance()
  * Return true if we successfully consumed resource,
  * false if insufficient resource was available.
  */
-bool PurgeQueue::_consume(CDentry *dn)
+bool StrayManager::_consume(CDentry *dn)
 {
   const int files_avail = g_conf->mds_max_purge_files - files_purging;
 
@@ -428,7 +428,7 @@ bool PurgeQueue::_consume(CDentry *dn)
  * Return the maximum number of concurrent RADOS ops that
  * may be executed while purging this inode.
  */
-uint32_t PurgeQueue::_calculate_ops_required(CInode *in)
+uint32_t StrayManager::_calculate_ops_required(CInode *in)
 {
   uint32_t ops_required = 0;
   if (in->is_dir()) {
@@ -456,7 +456,7 @@ uint32_t PurgeQueue::_calculate_ops_required(CInode *in)
   return ops_required;
 }
 
-void PurgeQueue::advance_delayed()
+void StrayManager::advance_delayed()
 {
   for (elist<CDentry*>::iterator p = delayed_eval_stray.begin(); !p.end(); ) {
     CDentry *dn = *p;
@@ -487,23 +487,23 @@ void PurgeQueue::advance_delayed()
  * FIXME make sure that updates to num_strays are also done on export/import
  * in multi-mds scenario!
  */
-void PurgeQueue::notify_stray_created()
+void StrayManager::notify_stray_created()
 {
   num_strays++;
   logger->set(l_mdc_num_strays, num_strays);
   logger->inc(l_mdc_strays_created);
 }
 
-void PurgeQueue::notify_stray_removed()
+void StrayManager::notify_stray_removed()
 {
   num_strays--;
   logger->set(l_mdc_num_strays, num_strays);
 }
 
 
-struct C_EvalStray : public PurgeQueueContext {
+struct C_EvalStray : public StrayManagerContext {
   CDentry *dn;
-  C_EvalStray(PurgeQueue *pq, CDentry *d) : PurgeQueueContext(pq), dn(d) {}
+  C_EvalStray(StrayManager *pq, CDentry *d) : StrayManagerContext(pq), dn(d) {}
   void finish(int r) {
     pq->eval_stray(dn);
   }
@@ -523,7 +523,7 @@ struct C_EvalStray : public PurgeQueueContext {
  * @returns true if the dentry will be purged (caller should never
  *          take more refs after this happens), else false.
  */
-bool PurgeQueue::eval_stray(CDentry *dn, bool delay)
+bool StrayManager::eval_stray(CDentry *dn, bool delay)
 {
   dout(10) << "eval_stray " << *dn << dendl;
   CDentry::linkage_t *dnl = dn->get_projected_linkage();
@@ -617,7 +617,7 @@ bool PurgeQueue::eval_stray(CDentry *dn, bool delay)
   }
 }
 
-void PurgeQueue::eval_remote_stray(CDentry *stray_dn, CDentry *remote_dn)
+void StrayManager::eval_remote_stray(CDentry *stray_dn, CDentry *remote_dn)
 {
   assert(stray_dn != NULL);
   assert(stray_dn->get_dir()->get_inode()->is_stray());
@@ -665,7 +665,7 @@ void PurgeQueue::eval_remote_stray(CDentry *stray_dn, CDentry *remote_dn)
  * dentry) by issuing a rename from the stray to the other
  * dentry.
  */
-void PurgeQueue::reintegrate_stray(CDentry *straydn, CDentry *rdn)
+void StrayManager::reintegrate_stray(CDentry *straydn, CDentry *rdn)
 {
   dout(10) << __func__ << " " << *straydn << " into " << *rdn << dendl;
 
@@ -701,7 +701,7 @@ void PurgeQueue::reintegrate_stray(CDentry *straydn, CDentry *rdn)
  * on completion of mv (i.e. inode put), resulting in a subsequent
  * reintegration.
  */
-void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
+void StrayManager::migrate_stray(CDentry *dn, mds_rank_t to)
 {
   CInode *in = dn->get_linkage()->get_inode();
   assert(in);
@@ -729,7 +729,7 @@ void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
   mds->send_message_mds(req, to);
 }
 
-  PurgeQueue::PurgeQueue(MDS *mds, MDCache *mdc)
+  StrayManager::StrayManager(MDS *mds)
   : delayed_eval_stray(member_offset(CDentry, item_stray)),
     mds(mds), logger(NULL),
     ops_in_flight(0), files_purging(0),
@@ -749,7 +749,7 @@ void PurgeQueue::migrate_stray(CDentry *dn, mds_rank_t to)
  * of waiting for them to trickle through the
  * queue.
  */
-void PurgeQueue::abort_queue()
+void StrayManager::abort_queue()
 {
   for (std::list<CDentry*>::iterator i = ready_for_purge.begin();
        i != ready_for_purge.end(); ++i)
