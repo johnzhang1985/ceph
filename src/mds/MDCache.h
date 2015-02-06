@@ -635,6 +635,10 @@ public:
     return my_ambiguous_imports.count((dir)->dirfrag()) == 0 &&
 	   uncommitted_slave_rename_olddir.count(dir->inode) == 0;
   }
+  void expire_recursive(
+    CInode *in,
+    std::map<mds_rank_t, MCacheExpire*>& expiremap,
+    CDir *subtree);
 
   void trim_client_leases();
   void check_memory_usage();
