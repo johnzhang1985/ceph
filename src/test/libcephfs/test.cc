@@ -183,6 +183,13 @@ TEST(LibCephFS, OpenLayout) {
   ASSERT_EQ(0, strcmp("data", poolname));
   ceph_close(cmount, fd);
 
+  /* on already-written file (ENOTEMPTY) */
+  char xattrk[128];
+  char xattrv[128];
+  sprintf(xattrk, "ceph.file.layout.pool");
+  sprintf(xattrv, "metadata");
+  ASSERT_EQ(ceph_setxattr(cmount, test_layout_file, xattrk, (void *)xattrv, 128, 0), -ENOTEMPTY);
+
   /* invalid layout */
   sprintf(test_layout_file, "test_layout_%d_c", getpid());
   fd = ceph_open_layout(cmount, test_layout_file, O_CREAT, 0666, (1<<20), 1, 19, NULL);
