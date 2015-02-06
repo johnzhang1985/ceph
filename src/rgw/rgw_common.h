@@ -1266,7 +1266,7 @@ public:
   /*
    * get the object's key name as being referred to by the bucket index.
    */
-  string get_index_key_name() {
+  string get_index_key_name() const {
     if (ns.empty()) {
       if (orig_obj.size() < 1 || orig_obj[0] != '_') {
         return orig_obj;
@@ -1279,7 +1279,7 @@ public:
     return string(buf) + orig_obj;
   };
 
-  void get_index_key(rgw_obj_key *key) {
+  void get_index_key(rgw_obj_key *key) const {
     key->name = get_index_key_name();
     key->instance = instance;
   }
@@ -1394,6 +1394,14 @@ public:
       ::decode(bucket, bl);
     if (struct_v >= 4)
       ::decode(instance, bl);
+    if (ns.empty() && instance.empty()) {
+      orig_obj = object;
+    } else {
+      ssize_t pos = object.find('_', 1);
+      if (pos >= 0) {
+        orig_obj = object.substr(pos);
+      }
+    }
     DECODE_FINISH(bl);
   }
   void dump(Formatter *f) const;
