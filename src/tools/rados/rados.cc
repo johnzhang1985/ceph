@@ -2282,6 +2282,8 @@ static int rados_tool_common(const std::map < std::string, std::string > &opts,
       cout << "press enter to exit..." << std::endl;
       getchar();
     }
+    io_ctx.unwatch2(cookie);
+    rados.watch_flush();
   }
   else if (strcmp(nargs[0], "notify") == 0) {
     if (!pool_name || nargs.size() < 3)
