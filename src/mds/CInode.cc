@@ -3497,25 +3497,21 @@ void CInode::decode_import(bufferlist::iterator& p,
 
 void InodeStore::dump(Formatter *f) const
 {
-  f->open_object_section("inode_store");
-  {
-    inode.dump(f);
-    f->dump_string("symlink", symlink);
-    // FIXME: dirfragtree: dump methods for fragtree_t
-    // FIXME: xattrs: JSON-safe versions of binary xattrs
-    f->open_array_section("old_inodes");
-    for (std::map<snapid_t, old_inode_t>::const_iterator i = old_inodes.begin(); i != old_inodes.end(); ++i) {
-      f->open_object_section("old_inode");
-      {
-        // The key is the last snapid, the first is in the old_inode_t
-        f->dump_int("last", i->first);
-        i->second.dump(f);
-      }
-      f->close_section();  // old_inode
+  inode.dump(f);
+  f->dump_string("symlink", symlink);
+  // FIXME: dirfragtree: dump methods for fragtree_t
+  // FIXME: xattrs: JSON-safe versions of binary xattrs
+  f->open_array_section("old_inodes");
+  for (std::map<snapid_t, old_inode_t>::const_iterator i = old_inodes.begin(); i != old_inodes.end(); ++i) {
+    f->open_object_section("old_inode");
+    {
+      // The key is the last snapid, the first is in the old_inode_t
+      f->dump_int("last", i->first);
+      i->second.dump(f);
     }
-    f->close_section();  // old_inodes
+    f->close_section();  // old_inode
   }
-  f->close_section();  // inode_store
+  f->close_section();  // old_inodes
 }
 
 
